@@ -4,107 +4,101 @@ import numpy as np
 import os
 import pickle
 import csv
+import config
 
-# --- Load your database ---
-db_file = "book_database.csv"
-books_db = {}
-with open(db_file, newline='', encoding='utf-8') as csvfile:
-    reader = csv.DictReader(csvfile)
-    for row in reader:
-        books_db[row["Barcode"]] = {
-            "Folder": row["Book Folder"],
-            "Title": row["Title"],
-            "Author": row["Author"],
-            "Shelf": row["Shelf"]
-        }
-
-# --- Load AKAZE features ---
-features_path = "features/"
+# إعداد AKAZE و FLANN
 akaze = cv2.AKAZE_create()
-akaze.setThreshold(0.005)  # يقلل عدد keypoints = أسرع
+akaze.setThreshold(config.AKAZE_THRESHOLD)
 
-# إعداد FLANN matcher
-index_params = dict(algorithm=1, trees=5)  # KDTree
-search_params = dict(checks=50)
+index_params = dict(algorithm=1, trees=config.FLANN_TREES)
+search_params = dict(checks=config.FLANN_CHECKS)
 flann = cv2.FlannBasedMatcher(index_params, search_params)
 
+# تحميل قاعدة البيانات
+def load_database():
+    books_db = {}
+    with open(config.DB_FILE, newline='', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            books_db[row["Barcode"]] = {
+                "Folder": row["Book Folder"],
+                "Title": row["Title"],
+                "Author": row["Author"],
+                "Shelf": row["Shelf"]
+            }
+    return books_db
+
+# تحميل ميزات AKAZE
 def load_features():
     features = {}
-    for file in os.listdir(features_path):
+    for file in os.listdir(config.FEATURES_PATH):
         if file.endswith(".pkl"):
             book_folder = file.replace(".pkl", "")
-            with open(os.path.join(features_path, file), "rb") as f:
+            with open(os.path.join(config.FEATURES_PATH, file), "rb") as f:
                 des = pickle.load(f)
                 if des is not None:
-                    des = des.astype(np.float32)  # تحويل لكل ملف AKAZE
+                    des = des.astype(np.float32)
                 features[book_folder] = des
     return features
 
+books_db = load_database()
 features_db = load_features()
 
-# --- Capture image from camera ---
-cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+# دالة الالتقاط والتعرف
+def capture_and_identify():
+    print("📸 Capturing image...")
+    cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAM_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAM_HEIGHT)
+    ret, frame = cap.read()
+    cap.release()
 
-ret, frame = cap.read()
-cap.release()
+    if not ret:
+        print("❌ Failed to capture image")
+        return
 
-if not ret:
-    print("❌ Failed to capture image")
-    exit()
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced = clahe.apply(gray)
+    zoomed = cv2.resize(enhanced, (enhanced.shape[1]*2, enhanced.shape[0]*2), interpolation=cv2.INTER_CUBIC)
 
-# --- Preprocessing for barcode detection ---
-gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-enhanced = clahe.apply(gray)
-zoomed = cv2.resize(enhanced, (enhanced.shape[1]*2, enhanced.shape[0]*2), interpolation=cv2.INTER_CUBIC)
+    # محاولة قراءة الباركود أولاً
+    barcodes = pyzbar.decode(zoomed)
+    if barcodes:
+        for barcode in barcodes:
+            barcode_data = barcode.data.decode("utf-8")
+            if barcode_data in books_db:
+                book = books_db[barcode_data]
+                print(f"✅ Barcode matched: {book['Title']} on Shelf {book['Shelf']}")
+                return
+        print("⚠️ Barcode not found in DB, using AKAZE...")
+    else:
+        print("⚠️ No barcode found, trying AKAZE...")
 
-# --- Step 1: Barcode detection ---
-barcodes = pyzbar.decode(zoomed)
-if barcodes:
-    found = False
-    for barcode in barcodes:
-        barcode_data = barcode.data.decode("utf-8")
-        if barcode_data in books_db:
-            book = books_db[barcode_data]
-            print(f"✅ Barcode matched: {book['Title']} on Shelf {book['Shelf']}")
-            found = True
-        else:
-            print(f"⚠️ Barcode {barcode_data} not found in DB")
-    if found:
-        exit()
-else:
-    print("⚠️ No barcode found, trying AKAZE feature matching...")
+    # AKAZE matching
+    small_gray = cv2.resize(gray, (gray.shape[1]//2, gray.shape[0]//2))
+    kp1, des1 = akaze.detectAndCompute(small_gray, None)
+    if des1 is None:
+        print("❌ No features detected")
+        return
+    des1 = des1.astype(np.float32)
 
-# --- Step 2: AKAZE feature matching ---
-# تصغير الصورة قبل استخراج descriptors لتسريع العملية
-small_gray = cv2.resize(gray, (gray.shape[1]//2, gray.shape[0]//2))
-kp1, des1 = akaze.detectAndCompute(small_gray, None)
+    best_match = None
+    max_good_matches = 0
 
-if des1 is not None:
-    des1 = des1.astype(np.float32)  # تحويل لـ float32 لـ FLANN
+    for book_folder, des2 in features_db.items():
+        if des2 is None or len(des2) == 0:
+            continue
+        matches = flann.knnMatch(des1, des2, k=2)
+        good_matches = [m for m, n in matches if m.distance < 0.75 * n.distance]
+        if len(good_matches) > max_good_matches:
+            max_good_matches = len(good_matches)
+            best_match = book_folder
 
-best_match = None
-max_good_matches = 0
-
-for book_folder, des2 in features_db.items():
-    if des2 is None or len(des2) == 0:
-        continue
-    matches = flann.knnMatch(des1, des2, k=2)
-    good_matches = []
-    for m, n in matches:
-        if m.distance < 0.75 * n.distance:
-            good_matches.append(m)
-    if len(good_matches) > max_good_matches:
-        max_good_matches = len(good_matches)
-        best_match = book_folder
-
-if best_match:
-    # طباعة اسم الكتاب والرف بعد AKAZE
-    for barcode, info in books_db.items():
-        if info["Folder"] == best_match:
-            print(f"🔍 Feature matched: {info['Title']} on Shelf {info['Shelf']}")
-            break
-else:
-    print("❌ No match found with AKAZE features")
+    if best_match:
+        for barcode, info in books_db.items():
+            if info["Folder"] == best_match:
+                print(f"🔍 Feature matched: {info['Title']} on Shelf {info['Shelf']}")
+                return
+    else:
+        print("❌ No match found with AKAZE features")
