@@ -4,7 +4,7 @@
 IR_PIN = 12
 IR_ACTIVE_LOW = True  # True إذا الحساس يفعّل على LOW
 
-# 📂 Paths
+#  Paths
 DB_FILE = "book_database.csv"
 FEATURES_PATH = "features/"
 CAM_WIDTH = 1920
