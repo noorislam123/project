@@ -1,25 +1,21 @@
 import RPi.GPIO as GPIO
 import time
+import config
 
-RELAY_PIN = 5
-
+GPIO.setwarnings(False)  # 🔇 إيقاف التحذير
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(RELAY_PIN, GPIO.OUT)
+GPIO.setup(config.RELAY_PIN, GPIO.OUT)
+
+# تحديد نوع الريلاي
+ACTIVE_HIGH = True  # غيّرها إلى False إذا الريلاي Active High
 
 def conveyor_on():
-    GPIO.output(RELAY_PIN, GPIO.HIGH)
-    print("✅ Conveyor ON")
+    print("Relay ON (Conveyor running)")
+    GPIO.output(config.RELAY_PIN, GPIO.HIGH if ACTIVE_HIGH else GPIO.LOW)
 
 def conveyor_off():
-    GPIO.output(RELAY_PIN, GPIO.LOW)
-    print("🛑 Conveyor OFF")
+    print("Relay OFF (Conveyor stopped)")
+    GPIO.output(config.RELAY_PIN, GPIO.LOW if ACTIVE_HIGH else GPIO.HIGH)
 
-try:
-    while True:
-        conveyor_on()
-        time.sleep(10)
-        conveyor_off()
-        time.sleep(10)
-except KeyboardInterrupt:
+def cleanup():
     GPIO.cleanup()
-

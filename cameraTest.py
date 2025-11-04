@@ -55,7 +55,7 @@ def capture_and_identify():
 
     if not ret:
         print("❌ Failed to capture image")
-        return
+        return False   # ← رجع False بدل لا شيء
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
@@ -70,7 +70,7 @@ def capture_and_identify():
             if barcode_data in books_db:
                 book = books_db[barcode_data]
                 print(f"✅ Barcode matched: {book['Title']} on Shelf {book['Shelf']}")
-                return
+                return True   # ← تم التعرف بنجاح
         print("⚠️ Barcode not found in DB, using AKAZE...")
     else:
         print("⚠️ No barcode found, trying AKAZE...")
@@ -80,9 +80,9 @@ def capture_and_identify():
     kp1, des1 = akaze.detectAndCompute(small_gray, None)
     if des1 is None:
         print("❌ No features detected")
-        return
-    des1 = des1.astype(np.float32)
+        return False   # ← ما قدر يتعرف
 
+    des1 = des1.astype(np.float32)
     best_match = None
     max_good_matches = 0
 
@@ -99,6 +99,8 @@ def capture_and_identify():
         for barcode, info in books_db.items():
             if info["Folder"] == best_match:
                 print(f"🔍 Feature matched: {info['Title']} on Shelf {info['Shelf']}")
-                return
+                return True   # ← تم التعرف بنجاح
     else:
         print("❌ No match found with AKAZE features")
+        return False   # ← فشل بالتعرف
+
