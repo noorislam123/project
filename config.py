@@ -7,6 +7,9 @@ IR_ACTIVE_LOW = True  # True إذا الحساس يفعّل على LOW
 # 🔌 Relay settings
 RELAY_PIN = 16
 
+# 🔌 Micro SW settings
+MICRO_PIN = 26
+
 #  Paths
 DB_FILE = "book_database.csv"
 FEATURES_PATH = "features/"

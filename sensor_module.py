@@ -3,10 +3,12 @@ import time
 from cameraTest import capture_and_identify
 import config
 import RELAY
+import microsw as micro_switch
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(config.IR_PIN, GPIO.IN)
+micro_switch.setup()  # إعداد المايكرو سويتش
 
 def object_detected():
     """Return True if an object is detected by the IR sensor"""
@@ -19,7 +21,7 @@ def start_sensor_loop():
         while True:
             if object_detected():
                 print("📘 Object detected! Waiting 3 seconds before capture...")
-                time.sleep(3)  # wait before capture
+                time.sleep(3)
 
                 found = False
                 try:
@@ -37,13 +39,20 @@ def start_sensor_loop():
                 if found:
                     print("✅ Book recognized! Turning conveyor ON...")
                     RELAY.conveyor_on()
-                    time.sleep(17)
-                    RELAY.conveyor_off()
-                    print("🛑 Conveyor OFF")
+
+                    reached = micro_switch.wait_for_press(timeout=17.5)
+                    if reached:
+                        print("⏳ Waiting 2 seconds before stopping conveyor...")
+                        time.sleep(2)
+                        RELAY.conveyor_off()
+                        print("🛑 Conveyor stopped (micro switch pressed)")
+                    else:
+                        RELAY.conveyor_off()
+                        print("❌ ERROR: Book did not reach micro switch in time!")
+
                 else:
                     print("❌ No match found. Conveyor stays OFF")
 
-                # Wait until object leaves
                 while object_detected():
                     time.sleep(0.1)
                 print("⏳ Done. Waiting for next object...")
@@ -54,4 +63,5 @@ def start_sensor_loop():
         print("🛑 Exiting...")
     finally:
         RELAY.conveyor_off()
-        RELAY.cleanup()
+        GPIO.cleanup()
+        print("GPIO cleaned up.")
