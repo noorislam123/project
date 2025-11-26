@@ -14,7 +14,7 @@ index_params = dict(algorithm=1, trees=config.FLANN_TREES)
 search_params = dict(checks=config.FLANN_CHECKS)
 flann = cv2.FlannBasedMatcher(index_params, search_params)
 
-# تحميل قاعدة البيانات
+# تحميل قاعدة البيانات (المعدلة)
 def load_database():
     books_db = {}
     with open(config.DB_FILE, newline='', encoding='utf-8') as csvfile:
@@ -24,7 +24,8 @@ def load_database():
                 "Folder": row["Book Folder"],
                 "Title": row["Title"],
                 "Author": row["Author"],
-                "Shelf": row["Shelf"]
+                "Shelf": int(row["Shelf"]),
+                "RFID": int(row["RFID_Tag"])
             }
     return books_db
 
@@ -55,7 +56,7 @@ def capture_and_identify():
 
     if not ret:
         print("❌ Failed to capture image")
-        return False   # ← رجع False بدل لا شيء
+        return False, None, None, None
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
@@ -70,7 +71,9 @@ def capture_and_identify():
             if barcode_data in books_db:
                 book = books_db[barcode_data]
                 print(f"✅ Barcode matched: {book['Title']} on Shelf {book['Shelf']}")
-                return True   # ← تم التعرف بنجاح
+
+                return True, book["Folder"], book["Shelf"], book["RFID"]
+
         print("⚠️ Barcode not found in DB, using AKAZE...")
     else:
         print("⚠️ No barcode found, trying AKAZE...")
@@ -80,7 +83,7 @@ def capture_and_identify():
     kp1, des1 = akaze.detectAndCompute(small_gray, None)
     if des1 is None:
         print("❌ No features detected")
-        return False   # ← ما قدر يتعرف
+        return False, None, None, None
 
     des1 = des1.astype(np.float32)
     best_match = None
@@ -99,8 +102,7 @@ def capture_and_identify():
         for barcode, info in books_db.items():
             if info["Folder"] == best_match:
                 print(f"🔍 Feature matched: {info['Title']} on Shelf {info['Shelf']}")
-                return True   # ← تم التعرف بنجاح
-    else:
-        print("❌ No match found with AKAZE features")
-        return False   # ← فشل بالتعرف
+                return True, info["Folder"], info["Shelf"], info["RFID"]
 
+    print("❌ No match found with AKAZE features")
+    return False, None, None, None

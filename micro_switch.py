@@ -14,7 +14,7 @@ try:
     while True:
         if GPIO.input(config.MICRO_PIN) == GPIO.LOW:
             print("🔴 Micro switch PRESSED (Limit reached!)")
-            time.sleep(0.5)
+            time.sleep(2)
         else:
             print("🟢 Released")
             time.sleep(0.5)

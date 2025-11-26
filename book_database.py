@@ -1,28 +1,25 @@
 import csv
 
-barcode_file = "barcode_results.csv"
-database_file = "book_database.csv"
+DB_FILE = "book_database.csv"
 
-# Read barcode results
-books = []
-with open(barcode_file, newline='') as csvfile:
-    reader = csv.DictReader(csvfile)
-    for row in reader:
-        if row["Barcode Data"] not in ["No barcode found", "File not found"]:
-            books.append(row)
+def load_database():
+    db = {}
+    with open(DB_FILE, newline='', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            book_folder = row["Book Folder"].strip()
+            db[book_folder] = {
+                "barcode": row["Barcode"].strip(),
+                "title": row["Title"].strip(),
+                "author": row["Author"].strip(),
+                "shelf": int(row["Shelf"].strip()),
+                "rfid": int(row["RFID_Tag"].strip())
+            }
+    return db
 
-# Create new book database
-with open(database_file, mode='w', newline='') as file:
-    writer = csv.writer(file)
-    writer.writerow(["Book Folder", "Barcode", "Title", "Author", "Shelf"])
 
-    for book in books:
-        print(f"\nBook: {book['Book Folder']} ({book['Barcode Data']})")
-        title = input("Enter book title: ")
-        author = input("Enter author name: ")
-        shelf = input("Enter shelf number: ")
-
-        writer.writerow([book["Book Folder"], book["Barcode Data"], title, author, shelf])
-        print("Added successfully!")
-
-print(f"\nDatabase created: {database_file}")
+def get_book_info(book_folder):
+    db = load_database()
+    if book_folder in db:
+        return db[book_folder]    # returns dict
+    return None
