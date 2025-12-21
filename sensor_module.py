@@ -118,7 +118,7 @@ def start_sensor_loop():
                         if space_ok:
                             if space_ok:
                                 print("🎉 Space OK → starting drive mechanism")
-                                drive_motor.run_until_micro_on_then_off()
+                                drive_motor.run_until_micro_on()
 
                         else:
                             print("❌ ERROR: Wrong shelf tag detected during ultrasonic check!")

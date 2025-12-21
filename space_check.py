@@ -35,7 +35,7 @@ def check_shelf_space(correct_shelf_tag, home_tag):
         print("❌ No space → moving slightly forward...")
 
         lift_motor.lift_up()    # حرك الموتور للأمام
-        time.sleep(3)
+        time.sleep(1)
         lift_motor.stop()
         time.sleep(3)
 
