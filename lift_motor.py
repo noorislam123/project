@@ -1,8 +1,8 @@
 import RPi.GPIO as GPIO
 import time
 
-IN1 = 6  # غير البنات حسب توصيلتك
-IN2 = 5
+IN1 =6
+IN2= 5
 
 def setup():
     GPIO.setmode(GPIO.BCM)
