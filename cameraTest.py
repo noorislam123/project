@@ -1,3 +1,4 @@
+#camera test
 import cv2
 from pyzbar import pyzbar
 import numpy as np
@@ -106,3 +107,5 @@ def capture_and_identify():
 
     print("❌ No match found with AKAZE features")
     return False, None, None, None
+
+

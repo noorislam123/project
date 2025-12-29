@@ -1,3 +1,4 @@
+#ultrasonic
 import RPi.GPIO as GPIO
 import time
 
@@ -37,3 +38,4 @@ def read_distance():
     distance = duration * 17150   # cm
 
     return round(distance, 2)
+

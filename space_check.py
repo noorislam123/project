@@ -1,51 +1,47 @@
+# space_check.py
 import time
+import config
 import ultrasonic
 import lift_motor
 import rfid_reader
 
-SPACE_THRESHOLD = 10.0   # إذا أكثر من هيك → في مساحة
+def _avg_ultra(samples=5, delay=0.05):
+    readings = []
+    for _ in range(samples):
+        d = ultrasonic.read_distance()
+        if d is not None:
+            readings.append(d)
+        time.sleep(delay)
+    return sum(readings) / len(readings) if readings else None
 
 
-def check_shelf_space(correct_shelf_tag, home_tag):
-    """
-    correct_shelf_tag = التاغ المفروض يكون للرف
-    home_tag = التاغ اللي يعتبر OK أيضاً (عادة يكون نفسه)
-    """
-    ultrasonic.setup_ultrasonic()   # تجهيز التريغ + الإيكو
-
-    print("🔎 Starting shelf space check using ultrasonic...")
+def check_space_until_next_tag(end_tag, step_up_time=0.8, max_steps=25):
+    ultrasonic.setup_ultrasonic()
+    steps = 0
 
     while True:
-        # -------------------------------------------------
-        # 1) قياس المسافة بالألتراسونيك
-        # -------------------------------------------------
-        distance = ultrasonic.read_distance()
-        print(f"[ULTRA] Distance = {distance} cm")
+        avg = _avg_ultra()
+        print(f"[ULTRA] avg={avg}")
 
-        # -------------------------------------------------
-        # 2) إذا في مساحة كافية → Success
-        # -------------------------------------------------
-        if distance is not None and distance > SPACE_THRESHOLD:
-            print("✅ Space available in this shelf!")
-            return True
+        if avg is None:
+            return "SENSOR_FAIL"
 
-        # -------------------------------------------------
-        # 3) ما في مساحة → دفع/رفع بسيط
-        # -------------------------------------------------
-        print("❌ No space → moving slightly forward...")
+        if avg > config.SPACE_THRESHOLD:
+            lift_motor.stop()
+            return "SPACE_OK"
 
-        lift_motor.lift_up()    # حرك الموتور للأمام
-        time.sleep(1)
+        # No space → step up
+        lift_motor.lift_up()
+        time.sleep(step_up_time)
         lift_motor.stop()
-        time.sleep(3)
+        time.sleep(0.2)
 
-        # -------------------------------------------------
-        # 4) فحص RFID داخل اللوب
-        # -------------------------------------------------
-        tag = rfid_reader.read_tag()
-        print(f"[RFID ULTRA] Read tag: {tag}")
+        # Check end of shelf
+        if end_tag is not None:
+            tag = rfid_reader.read_tag_stable()
+            if tag == end_tag:
+                return "END_OF_SHELF"
 
-        # إذا ظهر تاغ غلط → خطأ
-        if tag is not None and (tag != correct_shelf_tag and tag != home_tag):
-            print("❌ ERROR: Wrong shelf tag detected during ultrasonic check!")
-            return False
+        steps += 1
+        if steps >= max_steps:
+            return "END_OF_SHELF"

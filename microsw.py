@@ -1,3 +1,4 @@
+#microswitch
 import RPi.GPIO as GPIO
 import time
 
@@ -20,3 +21,5 @@ def wait_for_press(timeout=17):
             print("❌ ERROR: Micro switch not pressed within 17 seconds!")
             return False
         time.sleep(0.1)
+
+

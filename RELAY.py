@@ -1,3 +1,4 @@
+#relay
 import RPi.GPIO as GPIO
 import time
 import config
@@ -19,3 +20,4 @@ def conveyor_off():
 
 def cleanup():
     GPIO.cleanup()
+
