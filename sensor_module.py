@@ -196,11 +196,11 @@ def start_sensor_loop():
 
             print("5️⃣ LIFT: STOP")
             lift_motor.stop()
-
+            time.sleep(2.0)
             # 7) DRIVE
             if space_found:
                 print("7️⃣ DRIVE: placing book...")
-                drive_motor.run_until_micro_on()
+                drive_motor.run_until_micro_release(micro_switch, timeout=6.0)
                 print("✅ DRIVE done")
             else:
                 if not scanning_started:
