@@ -19,3 +19,11 @@ FLANN_CHECKS = 50
 HOME_TAG = 832352190595  # <-- حطي UID تاغ الرف الأول/الهوم الحقيقي
 SPACE_THRESHOLD = 10
 END_TAG = 71006445736
+
+IN3 = 17
+IN4 = 27
+ENB = 22 
+PWM_FREQ = 1000
+
+# إذا المايكرو سويتش تبع الدفع عندك مربوط مباشرة:
+# DRIVE_MICRO_PIN = 26

@@ -20,18 +20,11 @@ lift_motor.setup()
 drive_motor.setup()
 
 
-# -------------------------------------------------
-# IR DETECTION
-# -------------------------------------------------
 def object_detected():
     signal = GPIO.input(config.IR_PIN)
-    detected = (signal == 0) if config.IR_ACTIVE_LOW else (signal == 1)
-    return detected
+    return signal == 0 if config.IR_ACTIVE_LOW else signal == 1
 
 
-# -------------------------------------------------
-# SHELF TAG MAP (from CSV)
-# -------------------------------------------------
 def build_shelf_tag_map():
     shelf_to_tag = {}
     with open(config.DB_FILE, newline='', encoding='utf-8') as f:
@@ -42,44 +35,27 @@ def build_shelf_tag_map():
 
 
 def get_next_shelf_tag(current_shelf, shelf_to_tag):
-    """
-    يرجع marker لنهاية نافذة الرف:
-    - Shelf1 -> tag of Shelf2
-    - Shelf2 -> tag of Shelf3
-    - Shelf3 (آخر رف) -> END_TAG (نهاية المكتبة)
-    """
     shelves = sorted(shelf_to_tag.keys())
     if current_shelf not in shelf_to_tag:
         return None
-
     i = shelves.index(current_shelf)
-
-    # آخر رف -> نهاية المكتبة
     if i == len(shelves) - 1:
-        return getattr(config, "END_TAG", None)
-
-    # رف عادي -> التاغ اللي بعده
+        return getattr(config, "END_TAG", None)  # end of library
     return shelf_to_tag[shelves[i + 1]]
 
 
-# -------------------------------------------------
-# MAIN LOOP
-# -------------------------------------------------
 def start_sensor_loop():
-    print("📡 System started → waiting for IR object...")
+    print("📡 System ON → Waiting for object (IR)...")
 
-    # Load shelf map once
     try:
         shelf_to_tag = build_shelf_tag_map()
         print(f"🗺️ Shelf map loaded: {shelf_to_tag}")
     except Exception as e:
-        print(f"❌ Failed to load shelf map from CSV: {e}")
+        print(f"❌ CSV load error: {e}")
         shelf_to_tag = {}
 
     try:
         while True:
-
-            # 1) WAIT IR
             if not object_detected():
                 time.sleep(0.05)
                 continue
@@ -87,159 +63,179 @@ def start_sensor_loop():
             print("\n==============================")
             print("1️⃣ IR: Object detected ✅")
             print("==============================")
-            time.sleep(0.3)  # debounce
+            time.sleep(0.3)
 
             # 2) CAMERA
-            print("2️⃣ Camera: capturing + identifying...")
+            print("2️⃣ CAMERA: Capturing + identifying...")
             try:
                 found, book_folder, shelf, target_tag = capture_and_identify()
             except Exception as e:
-                print(f"⚠️ Camera error: {e}")
+                print(f"⚠️ CAMERA ERROR: {e}")
                 found, book_folder, shelf, target_tag = False, None, None, None
 
-            print(f"📌 Camera result: found={found}, shelf={shelf}, target_tag={target_tag}")
+            print(f"📌 CAMERA RESULT: found={found}, shelf={shelf}, target_tag={target_tag}")
 
             if not (found and shelf and target_tag):
-                print("↩️ Not recognized / missing data → back to idle.")
+                print("↩️ Not recognized → back to idle.")
                 while object_detected():
                     time.sleep(0.05)
                 continue
 
             target_tag = int(target_tag)
             home_tag = int(config.HOME_TAG)
-            next_tag = get_next_shelf_tag(shelf, shelf_to_tag) if shelf_to_tag else None
+            next_tag = get_next_shelf_tag(shelf, shelf_to_tag) if shelf_to_tag else getattr(config, "END_TAG", None)
 
-            print(f"✅ Target shelf={shelf}")
-            print(f"🏷️ target_tag={target_tag}")
-            print(f"🏁 next_marker_tag={next_tag}  (Shelf end / Library end)")
-            print(f"🏠 home_tag={home_tag}")
+            print(f"🎯 Target shelf={shelf}")
+            print(f"🏷️ TARGET_TAG={target_tag}")
+            print(f"🏁 NEXT/END_TAG={next_tag}")
+            print(f"🏠 HOME_TAG={home_tag}")
 
-            # 3) CONVEYOR ON
-            print("3️⃣ Relay+Conveyor: ON")
+            # 3) CONVEYOR
+            print("3️⃣ RELAY+CONVEYOR: ON")
             RELAY.conveyor_on()
 
-            # 4) WAIT MICRO SWITCH
-            print("4️⃣ MicroSwitch: waiting for press...")
+            # 4) MICRO SWITCH
+            print("4️⃣ MICRO SWITCH: waiting press...")
             reached = micro_switch.wait_for_press(timeout=17.5)
 
-            print("3️⃣ Relay+Conveyor: OFF (safety stop)")
+            print("3️⃣ RELAY+CONVEYOR: OFF (safety)")
             RELAY.conveyor_off()
 
             if not reached:
-                print("❌ MicroSwitch not pressed → abort cycle.")
+                print("❌ Micro switch timeout → abort.")
                 while object_detected():
                     time.sleep(0.05)
                 continue
 
-            print("✅ MicroSwitch pressed → book at pickup position.")
+            print("✅ Micro switch pressed → book positioned.")
 
-            # 5) LIFT UP + RFID WINDOW SCAN
-            print("5️⃣ Lift: START UP (we will NOT stop at target_tag)")
+            # 5) LIFT UP SMOOTH + RFID + ULTRASONIC WINDOW
+            print("5️⃣ LIFT: UP (SMOOTH continuous) 🚀")
             lift_motor.lift_up()
 
-            scanning_started = False   # يبدأ True بعد ما نقرأ target_tag
-            shelf_full = False
+            scanning_started = False
             space_found = False
+            shelf_full = False
 
-            step_up_time = 0.8         # زمن خطوة الرفع
-            max_steps = 60             # حماية
-            steps = 0
+            MAX_LIFT_TIME = 11
+            ULTRA_INTERVAL = 0.6
 
-            last_printed_tag = None
+            # extra lift after finding space
+            EXTRA_LIFT_AFTER_SPACE = 1.0
+            space_time = None
 
-            while steps < max_steps:
+            t0 = time.time()
+            last_tag_print = None
 
-                # قراءة RFID (Stable)
+            # start timers safely
+            last_ultra_check = time.time()
+
+            # anti-false-positive: require 2 consecutive SPACE_OK
+            SPACE_OK_CONFIRM = 1
+            space_ok_count = 0
+
+            # set when TARGET reached
+            target_time = None
+            MIN_AFTER_TARGET_DELAY = 0.4  # delay after hitting target to stabilize
+
+            while True:
+                # Safety timeout
+                if time.time() - t0 > MAX_LIFT_TIME:
+                    print("🛑 Safety: max lift time reached → stop")
+                    break
+
+                # Read RFID
                 tag = rfid_reader.read_tag_stable()
+                if tag is not None and tag != last_tag_print:
+                    print(f"🏷️ RFID: {tag}")
+                    last_tag_print = tag
 
-                if tag is not None and tag != last_printed_tag:
-                    print(f"🏷️ RFID: detected tag = {tag}")
-                    last_printed_tag = tag
+                # Start ultrasonic window at TARGET_TAG (lift stays running)
+                if (not scanning_started) and (tag == target_tag):
+                    scanning_started = True
+                    target_time = time.time()
+                    last_ultra_check = time.time()
+                    space_ok_count = 0
+                    print("✅ TARGET reached → ULTRASONIC scanning ON (lift still smooth)")
 
-                # إذا بدأنا فحص المسافة ووصلنا للنهاية -> رف مليان
-                if scanning_started and (next_tag is not None) and (tag == next_tag):
-                    print("🛑 Reached NEXT/END tag → Shelf is FULL (no space found).")
+                # If NEXT/END reached before finding space
+                if scanning_started and (not space_found) and (next_tag is not None) and (tag == next_tag):
+                    print("❌ ما في مساحة قبل NEXT/END TAG → Shelf FULL (رجّع)")
                     shelf_full = True
                     break
 
-                # تفعيل نافذة الفحص عند target_tag
-                if (not scanning_started) and (tag == target_tag):
-                    scanning_started = True
-                    print("✅ Reached TARGET tag → start checking space from here until next/end tag.")
+                # Ultrasonic checks only after scanning started
+                if scanning_started and (not space_found):
+                    # small delay after hitting TARGET
+                    if target_time is not None and (time.time() - target_time < MIN_AFTER_TARGET_DELAY):
+                        time.sleep(0.02)
+                        continue
 
-                # قبل target_tag: نرفع خطوة ونكمل
-                if not scanning_started:
-                    print(f"⬆️ Lifting... searching for target_tag (step {steps+1}/{max_steps})")
-                    lift_motor.lift_up()
-                    time.sleep(step_up_time)
-                    lift_motor.stop()
-                    time.sleep(0.15)
-                    steps += 1
-                    continue
+                    if time.time() - last_ultra_check >= ULTRA_INTERVAL:
+                        last_ultra_check = time.time()
+                        print("6️⃣ ULTRASONIC: checking space...")
+                        res = space_check.check_space(samples=3, delay=0.03)
 
-                # 6) ULTRASONIC CHECK (داخل نافذة الرف)
-                print("6️⃣ Ultrasonic: checking space...")
-                result = space_check.check_space(samples=5, delay=0.05)
+                        if res == "SPACE_OK":
+                            space_ok_count += 1
+                            print(f"✅ SPACE_OK confirm {space_ok_count}/{SPACE_OK_CONFIRM}")
+                            if space_ok_count >= SPACE_OK_CONFIRM:
+                                space_found = True
+                                space_time = time.time()
+                                print("🎉 SPACE_OK CONFIRMED → keep lifting 1s then stop & place")
+                        else:
+                            space_ok_count = 0
 
-                if result == "SPACE_OK":
-                    print("🎉 Space found ✅")
-                    space_found = True
-                    break
+                # After SPACE_OK: keep lifting 1 sec then stop
+                if space_found and space_time is not None:
+                    if time.time() - space_time >= EXTRA_LIFT_AFTER_SPACE:
+                        print("⏹️ Extra 1s done → stop lift now")
+                        break
 
-                print("❌ No space at this height → step up and re-check...")
+                time.sleep(0.02)
 
-                # خطوة رفع وارجع افحص
-                lift_motor.lift_up()
-                time.sleep(step_up_time)
-                lift_motor.stop()
-                time.sleep(0.15)
-                steps += 1
-
-            # وقف الرفع دائماً بعد الحلقة
-            print("5️⃣ Lift: STOP")
+            print("5️⃣ LIFT: STOP")
             lift_motor.stop()
 
-            # 7) DRIVE MOTOR if space_found
+            # 7) DRIVE
             if space_found:
-                print("7️⃣ Drive: placing book...")
+                print("7️⃣ DRIVE: placing book...")
                 drive_motor.run_until_micro_on()
-                print("✅ Drive done → book placed.")
+                print("✅ DRIVE done")
             else:
                 if not scanning_started:
-                    print("❌ Did not reach target_tag (timeout/steps) → abort.")
+                    print("❌ Did not reach TARGET_TAG in time")
                 elif shelf_full:
-                    print("📚 Shelf FULL → no placement.")
+                    print("📚 Shelf FULL ")
                 else:
-                    print("⚠️ Max steps reached without space → treat as FULL.")
+                    print("⚠️ No space found (timeout) → treat FULL")
 
             # 8) RETURN HOME
-            print("8️⃣ Lift: DOWN to HOME tag...")
+            print("8️⃣ LIFT: DOWN to HOME...")
             lift_motor.lift_down()
 
-            t0 = time.time()
             home_timeout = 25
-
+            td = time.time()
             while True:
                 t = rfid_reader.read_tag_stable()
                 if t is not None:
-                    print(f"🏷️ RFID (descending) = {t}")
+                    print(f"🏷️ RFID (down): {t}")
 
                 if t == home_tag:
-                    print("✅ HOME tag reached → stopping after 1 sec.")
+                    print("✅ HOME reached → stop after 1 sec")
                     time.sleep(1)
                     lift_motor.stop()
                     break
 
-                if time.time() - t0 > home_timeout:
-                    print("⚠️ HOME timeout → stop for safety.")
+                if time.time() - td > home_timeout:
+                    print("⚠️ HOME timeout → stop for safety")
                     lift_motor.stop()
                     break
 
                 time.sleep(0.05)
 
-            print("🔟 Cycle END → Ready for next object ✅")
+            print("🔟 Cycle END → Ready ✅")
 
-            # انتظر IR يرجع طبيعي
             while object_detected():
                 time.sleep(0.05)
 
@@ -247,8 +243,12 @@ def start_sensor_loop():
         print("🛑 Exiting system...")
 
     finally:
-        print("🔻 Safety shutdown: conveyor OFF + lift STOP + GPIO cleanup")
+        print("🔻 Safety shutdown")
         RELAY.conveyor_off()
         lift_motor.stop()
         GPIO.cleanup()
         print("GPIO cleaned up.")
+
+
+if __name__ == "__main__":
+    start_sensor_loop()

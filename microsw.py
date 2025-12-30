@@ -1,25 +1,36 @@
-#microswitch
 import RPi.GPIO as GPIO
 import time
+import config
 
-MICRO_PIN = 26  # البن الموصول على المايكرو سويتش
+PIN = getattr(config, "MICRO_SWITCH_PIN", 26)
+
+# True إذا التوصيل GPIO->switch->GND مع PUD_UP (المضغوط = 0)
+ACTIVE_LOW = getattr(config, "MICRO_ACTIVE_LOW", True)
+
+DEBOUNCE = getattr(config, "MICRO_DEBOUNCE", 0.05)
+
 
 def setup():
-    """تجهيز البن للمايكرو سويتش"""
+    GPIO.setwarnings(False)
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(MICRO_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    print("[MicroSwitch] Initialized on pin", MICRO_PIN)
 
-def wait_for_press(timeout=17):
-    """ينتظر ضغط المايكرو سويتش خلال مدة محددة"""
-    start_time = time.time()
+    pull = GPIO.PUD_UP if ACTIVE_LOW else GPIO.PUD_DOWN
+    GPIO.setup(PIN, GPIO.IN, pull_up_down=pull)
+
+
+def is_pressed() -> bool:
+    v = GPIO.input(PIN)
+    return (v == 0) if ACTIVE_LOW else (v == 1)
+
+
+def wait_for_press(timeout=10.0) -> bool:
+    """ينتظر أول مرة يصير المايكرو pressed."""
+    t0 = time.time()
     while True:
-        if GPIO.input(MICRO_PIN) == GPIO.LOW:
-            print("🔴 Micro switch pressed.")
+        if is_pressed():
+            time.sleep(DEBOUNCE)
             return True
-        if time.time() - start_time > timeout:
-            print("❌ ERROR: Micro switch not pressed within 17 seconds!")
+
+        if timeout is not None and (time.time() - t0) > timeout:
             return False
-        time.sleep(0.1)
-
-
+        time.sleep(0.01)

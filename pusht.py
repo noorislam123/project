@@ -1,46 +1,42 @@
 import RPi.GPIO as GPIO
 import time
-
+import config
 # ===== PIN SETUP =====
 IN3 = 17
 IN4 = 27
-ENA = 22   # PWM
+ENB = 22   # PWM
+
+
+PWM_FREQ = 1000 # Hz
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 
 GPIO.setup(IN3, GPIO.OUT)
 GPIO.setup(IN4, GPIO.OUT)
-GPIO.setup(ENA, GPIO.OUT)
+GPIO.setup(ENB, GPIO.OUT)
 
-# ===== PWM =====
-pwm = GPIO.PWM(ENA, 1000)   # 1 kHz
+pwm = GPIO.PWM(ENB, PWM_FREQ)
 pwm.start(0)
 
+def forward(speed):
+    GPIO.output(IN3, 1)
+    GPIO.output(IN4, 0)
+    pwm.ChangeDutyCycle(speed)
+
+def stop():
+    pwm.ChangeDutyCycle(0)
+    GPIO.output(IN3, 0)
+    GPIO.output(IN4, 0)
+
 try:
-    print("🚀 Forward - MAX speed")
-    GPIO.output(IN3, GPIO.HIGH)
-    GPIO.output(IN4, GPIO.LOW)
-    pwm.ChangeDutyCycle(100)
+    print("FORCE DRIVE: 60% for 3 seconds...")
+    forward(95)
     time.sleep(1)
-
-    print("⏸ Stop")
-    pwm.ChangeDutyCycle(0)
+    print("STOP")
+    stop()
     time.sleep(1)
-
-    print("⬅️ Backward - MAX speed")
-    GPIO.output(IN3, GPIO.LOW)
-    GPIO.output(IN4, GPIO.HIGH)
-    pwm.ChangeDutyCycle(100)
-    time.sleep(1)
-
-    print("🛑 Stop")
-    pwm.ChangeDutyCycle(0)
-
-except KeyboardInterrupt:
-    pass
 
 finally:
     pwm.stop()
     GPIO.cleanup()
-    print("✅ Test finished, GPIO cleaned")
