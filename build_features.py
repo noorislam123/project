@@ -6,44 +6,52 @@ import pickle
 DATASET_PATH = "dataset"
 FEATURES_PATH = "features"
 
+akaze = cv2.AKAZE_create(
+    threshold=0.001,
+    nOctaves=4,
+    nOctaveLayers=4
+)
 
-akaze = cv2.AKAZE_create()
+def preprocess(img):
+    # تحسين خفيف فقط
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    return clahe.apply(img)
 
-# 🔹 المرور على كل مجلد (كل كتاب)
-for book_name in os.listdir(DATASET_PATH):
-    book_path = os.path.join(DATASET_PATH, book_name)
-    if not os.path.isdir(book_path):
+os.makedirs(FEATURES_PATH, exist_ok=True)
+
+print("🚀 Extracting AKAZE features...")
+
+for book_folder in os.listdir(DATASET_PATH):
+    folder_path = os.path.join(DATASET_PATH, book_folder)
+    if not os.path.isdir(folder_path):
         continue
 
-    print(f"[+] Processing book: {book_name}")
-    descriptors_list = []
+    descriptors = []
+    print(f"📘 {book_folder}")
 
-    # 🔹 المرور على كل صورة داخل الكتاب
-    for image_name in os.listdir(book_path):
-        img_path = os.path.join(book_path, image_name)
-        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-
+    for img_name in os.listdir(folder_path):
+        img = cv2.imread(os.path.join(folder_path, img_name), cv2.IMREAD_GRAYSCALE)
         if img is None:
-            print(f"⚠️ تخطيت {image_name} (ملف غير صالح)")
             continue
 
-        # 🔹 استخراج النقاط والمزايا
-        keypoints, descriptors = akaze.detectAndCompute(img, None)
+        img = preprocess(img)
+        kp, des = akaze.detectAndCompute(img, None)
 
-        if descriptors is not None:
-            descriptors_list.append(descriptors)
+        if des is not None and len(des) >= 10:
+            descriptors.append(des)
 
-    # 🔹 دمج كل المزايا للكتاب الواحد
-    if descriptors_list:
-        all_descriptors = np.vstack(descriptors_list)
-        file_path = os.path.join(FEATURES_PATH, f"{book_name}.pkl")
+    if descriptors:
+        all_des = np.vstack(descriptors)
 
-        # 🔹 حفظ المزايا في ملف .pkl (pickle)
-        with open(file_path, "wb") as f:
-            pickle.dump(all_descriptors, f)
+        # ✅ ضمان النوع الصحيح
+        all_des = all_des.astype(np.uint8)
 
-        print(f"✅ Saved features for {book_name} ({len(all_descriptors)} descriptors)\n")
+        with open(os.path.join(FEATURES_PATH, f"{book_folder}.pkl"), "wb") as f:
+            pickle.dump(all_des, f)
+
+        print(f"   ✅ Saved {len(all_des)} descriptors")
     else:
-        print(f"⚠️ No descriptors found for {book_name}\n")
+        print("   ⚠️ No valid features")
 
-print("🎉 Done! كل ملفات المزايا انحفظت في مجلد 'features/'")
+print("\n✨ Feature database ready!")
+print(all_des.shape, all_des.dtype)

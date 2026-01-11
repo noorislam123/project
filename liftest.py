@@ -33,12 +33,11 @@ def lift_down(duration=3):
 try:
     print("🔧 Lift Motor Test Started")
 
-    lift_up(11)
-    time.sleep(1)
-
+    lift_up(1)
+    time.sleep(0.5)
 
     lift_down(10)
-    time.sleep(1)
+    time.sleep(0.5)
 
     print("✅ Test finished successfully")
 

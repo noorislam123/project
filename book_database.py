@@ -7,7 +7,7 @@ def load_database():
     with open(DB_FILE, newline='', encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            book_folder = row["Book Folder"].strip()
+            book_folder = row["Book_Folder"].strip()
             db[book_folder] = {
                 "barcode": row["Barcode"].strip(),
                 "title": row["Title"].strip(),

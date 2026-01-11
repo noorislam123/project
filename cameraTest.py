@@ -1,111 +1,109 @@
-#camera test
 import cv2
-from pyzbar import pyzbar
 import numpy as np
 import os
 import pickle
 import csv
 import config
 
-# إعداد AKAZE و FLANN
-akaze = cv2.AKAZE_create()
-akaze.setThreshold(config.AKAZE_THRESHOLD)
+akaze = cv2.AKAZE_create(
+    threshold=0.001,
+    nOctaves=4,
+    nOctaveLayers=4
+)
 
-index_params = dict(algorithm=1, trees=config.FLANN_TREES)
-search_params = dict(checks=config.FLANN_CHECKS)
-flann = cv2.FlannBasedMatcher(index_params, search_params)
-
-# تحميل قاعدة البيانات (المعدلة)
+bf = cv2.BFMatcher(cv2.NORM_HAMMING)
 def load_database():
     books_db = {}
-    with open(config.DB_FILE, newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
+
+    with open(config.DB_FILE, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+
+        print("CSV Columns:", reader.fieldnames)  # 🔍 للتأكد
+
         for row in reader:
+            folder = (
+                row.get("Book_Folder") or
+                row.get("Book Folder")
+            )
+
+            if folder is None:
+                print("❌ Book folder column not found in CSV")
+                continue
+
             books_db[row["Barcode"]] = {
-                "Folder": row["Book Folder"],
+                "Folder": folder,
                 "Title": row["Title"],
-                "Author": row["Author"],
                 "Shelf": int(row["Shelf"]),
                 "RFID": int(row["RFID_Tag"])
             }
+
     return books_db
 
-# تحميل ميزات AKAZE
 def load_features():
     features = {}
     for file in os.listdir(config.FEATURES_PATH):
         if file.endswith(".pkl"):
-            book_folder = file.replace(".pkl", "")
             with open(os.path.join(config.FEATURES_PATH, file), "rb") as f:
                 des = pickle.load(f)
-                if des is not None:
-                    des = des.astype(np.float32)
-                features[book_folder] = des
+                if des is not None and len(des) > 0:
+                    features[file.replace(".pkl", "")] = des
     return features
+def identify_with_akaze(frame, features_db, books_db):
 
-books_db = load_database()
-features_db = load_features()
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, (gray.shape[1]//2, gray.shape[0]//2))
 
-# دالة الالتقاط والتعرف
-def capture_and_identify():
-    print("📸 Capturing image...")
+    kp1, des1 = akaze.detectAndCompute(gray, None)
+
+    if des1 is None or len(des1) < 10:
+        print("❌ No AKAZE features detected")
+        return False, None, None, None
+
+    best_match = None
+    best_score = 0
+
+    for folder, des2 in features_db.items():
+        matches = bf.knnMatch(des1, des2, k=2)
+
+        good = []
+        for m, n in matches:
+            if m.distance < 0.75 * n.distance:
+                good.append(m)
+
+        if len(good) > best_score:
+            best_score = len(good)
+            best_match = folder
+
+    if best_match and best_score > 15:  # threshold مهم
+        for info in books_db.values():
+            if info["Folder"] == best_match:
+                print(f"✅ AKAZE matched: {info['Title']}")
+                return True, info["Folder"], info["Shelf"], info["RFID"]
+
+    print("❌ No AKAZE match found")
+    return False, None, None, None
+
+if __name__ == "__main__":
+    print("🚀 cameraTest started")
+
+    books_db = load_database()
+    features_db = load_features()
+
+    print(f"📚 Books loaded: {len(books_db)}")
+    print(f"🧠 Feature sets loaded: {len(features_db)}")
+
     cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAM_WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAM_HEIGHT)
+
+    if not cap.isOpened():
+        print("❌ Camera not opened")
+        exit()
+
     ret, frame = cap.read()
     cap.release()
 
     if not ret:
-        print("❌ Failed to capture image")
-        return False, None, None, None
+        print("❌ Failed to capture frame")
+        exit()
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    enhanced = clahe.apply(gray)
-    zoomed = cv2.resize(enhanced, (enhanced.shape[1]*2, enhanced.shape[0]*2), interpolation=cv2.INTER_CUBIC)
-
-    # محاولة قراءة الباركود أولاً
-    barcodes = pyzbar.decode(zoomed)
-    if barcodes:
-        for barcode in barcodes:
-            barcode_data = barcode.data.decode("utf-8")
-            if barcode_data in books_db:
-                book = books_db[barcode_data]
-                print(f"✅ Barcode matched: {book['Title']} on Shelf {book['Shelf']}")
-
-                return True, book["Folder"], book["Shelf"], book["RFID"]
-
-        print("⚠️ Barcode not found in DB, using AKAZE...")
-    else:
-        print("⚠️ No barcode found, trying AKAZE...")
-
-    # AKAZE matching
-    small_gray = cv2.resize(gray, (gray.shape[1]//2, gray.shape[0]//2))
-    kp1, des1 = akaze.detectAndCompute(small_gray, None)
-    if des1 is None:
-        print("❌ No features detected")
-        return False, None, None, None
-
-    des1 = des1.astype(np.float32)
-    best_match = None
-    max_good_matches = 0
-
-    for book_folder, des2 in features_db.items():
-        if des2 is None or len(des2) == 0:
-            continue
-        matches = flann.knnMatch(des1, des2, k=2)
-        good_matches = [m for m, n in matches if m.distance < 0.75 * n.distance]
-        if len(good_matches) > max_good_matches:
-            max_good_matches = len(good_matches)
-            best_match = book_folder
-
-    if best_match:
-        for barcode, info in books_db.items():
-            if info["Folder"] == best_match:
-                print(f"🔍 Feature matched: {info['Title']} on Shelf {info['Shelf']}")
-                return True, info["Folder"], info["Shelf"], info["RFID"]
-
-    print("❌ No match found with AKAZE features")
-    return False, None, None, None
-
-
+    result = identify_with_akaze(frame, features_db, books_db)
+    print("RESULT:", result)

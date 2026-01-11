@@ -4,7 +4,7 @@ IR_ACTIVE_LOW = True
 
 RELAY_PIN = 16
 
-MICRO_PIN = 26
+MICRO_SWITCH_PIN = 26
 
 DB_FILE = "book_database.csv"
 FEATURES_PATH = "features/"
@@ -14,7 +14,8 @@ CAM_HEIGHT = 1080
 AKAZE_THRESHOLD = 0.005
 FLANN_TREES = 5
 FLANN_CHECKS = 50
-
+TRIG_PIN = 23  
+ECHO_PIN = 24  #
 # Tags
 HOME_TAG = 832352190595  # <-- حطي UID تاغ الرف الأول/الهوم الحقيقي
 SPACE_THRESHOLD = 10
@@ -27,3 +28,5 @@ PWM_FREQ = 1000
 
 # إذا المايكرو سويتش تبع الدفع عندك مربوط مباشرة:
 # DRIVE_MICRO_PIN = 26
+LCD_I2C_ADDR = 0x27   # أو 0x3F حسب i2cdetect
+DEBUG = True
