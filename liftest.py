@@ -2,8 +2,8 @@ import RPi.GPIO as GPIO
 import time
 
 # GPIO pins (BCM)
-IN1 = 6
-IN2 = 5
+IN1 = 14
+IN2 = 21
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
@@ -33,10 +33,10 @@ def lift_down(duration=3):
 try:
     print("🔧 Lift Motor Test Started")
 
-    lift_up(1)
+    lift_up(5)
     time.sleep(0.5)
 
-    lift_down(10)
+    lift_down(5)
     time.sleep(0.5)
 
     print("✅ Test finished successfully")
