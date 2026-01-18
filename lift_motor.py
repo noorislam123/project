@@ -2,8 +2,8 @@
 import RPi.GPIO as GPIO
 import time
 
-IN1 = 6
-IN2= 5
+IN1 = 21                
+IN2= 20
 
 def setup():
     GPIO.setmode(GPIO.BCM)
@@ -14,7 +14,11 @@ def setup():
 def lift_up():
     GPIO.output(IN1, GPIO.HIGH)
     GPIO.output(IN2, GPIO.LOW)
+
     print("⬆️ Lifting UP")
+    print("IN1 =", GPIO.input(IN1))
+    print("IN2 =", GPIO.input(IN2))
+
 
 def lift_down():
     GPIO.output(IN1, GPIO.LOW)
@@ -41,6 +45,5 @@ if __name__ == "__main__":
     print("Stopping motor...")
     stop()
 
-    GPIO.cleanup()
 
 

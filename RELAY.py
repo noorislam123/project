@@ -18,6 +18,3 @@ def conveyor_off():
     print("Relay OFF (Conveyor stopped)")
     GPIO.output(config.RELAY_PIN, GPIO.LOW if ACTIVE_HIGH else GPIO.HIGH)
 
-def cleanup():
-    GPIO.cleanup()
-

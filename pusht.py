@@ -2,9 +2,9 @@ import RPi.GPIO as GPIO
 import time
 import config
 # ===== PIN SETUP =====
-IN3 = 17
-IN4 = 27
-ENB = 22   # PWM
+IN3 = 27
+IN4 = 17
+ENB = 22  # PWM
 
 
 PWM_FREQ = 1000 # Hz
@@ -29,14 +29,21 @@ def stop():
     GPIO.output(IN3, 0)
     GPIO.output(IN4, 0)
 
+def backward(speed):
+    GPIO.output(IN3, 0)
+    GPIO.output(IN4, 1)
+    pwm.ChangeDutyCycle(speed)
 try:
     print("FORCE DRIVE: 60% for 3 seconds...")
-    forward(95)
-    time.sleep(1)
+    forward(100)
+    time.sleep(3)
+    print("FORCE DRIVE: 60% for 3 seconds...")
+    backward(100)
+    time.sleep(3)
+
     print("STOP")
     stop()
     time.sleep(1)
 
 finally:
     pwm.stop()
-    GPIO.cleanup()

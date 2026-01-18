@@ -3,9 +3,9 @@ import RPi.GPIO as GPIO
 import time
 
 # ===== PIN SETUP =====
-IN3 = 17
-IN4 = 27
-ENB = 22   # Enable (ON/OFF)
+IN3 = 27
+IN4 = 17
+ENB = 22  # PWM
 
 def setup():
     GPIO.setwarnings(False)
@@ -41,10 +41,10 @@ def stop():
 def run_until_micro_release(
     micro_module,
     timeout=6.0,
-    poll=0.01,
+    poll=2.0,
     min_run=0.20,
-    back_time=1.0
-):
+    back_time=1.0,
+    ):
     """
     يدفع الكتاب بسرعة الديفولت:
     - إذا micro ON من البداية: يستنى يصير OFF -> يوقف

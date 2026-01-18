@@ -4,6 +4,8 @@ import os
 import pickle
 import csv
 import config
+
+
 from pyzbar import pyzbar
 import time
 
@@ -55,20 +57,27 @@ bf = cv2.BFMatcher(cv2.NORM_HAMMING)
 # ===================== DATABASE =====================
 def load_database():
     books_db = {}
+
     with open(config.DB_FILE, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
+
+
         print("CSV Columns:", reader.fieldnames)
         for row in reader:
+
+
             folder = row.get("Book_Folder") or row.get("Book Folder")
             if folder is None:
                 print("❌ Book folder column not found in CSV")
                 continue
+
             books_db[row["Barcode"]] = {
                 "Folder": folder,
                 "Title": row["Title"],
                 "Shelf": int(row["Shelf"]),
                 "RFID": int(row["RFID_Tag"])
             }
+
     return books_db
 
 # ===================== FEATURES =====================
@@ -104,52 +113,92 @@ def identify_with_akaze(frame, features_db, books_db):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, (gray.shape[1] // 2, gray.shape[0] // 2))
     kp1, des1 = akaze.detectAndCompute(gray, None)
+
     if des1 is None or len(des1) < 10:
         print("❌ No AKAZE features detected")
         return False, None, None, None
+
     best_match = None
     best_score = 0
+
     for folder, des2 in features_db.items():
         matches = bf.knnMatch(des1, des2, k=2)
+
+
         good = [m for m,n in matches if m.distance < 0.75 * n.distance]
         if len(good) > best_score:
             best_score = len(good)
             best_match = folder
+
     if best_match and best_score > 15:
         for info in books_db.values():
             if info["Folder"] == best_match:
                 print(f"✅ AKAZE matched: {info['Title']}")
                 return True, info["Folder"], info["Shelf"], info["RFID"]
+
     return False, None, None, None
 
 # ===================== CAPTURE + IDENTIFY =====================
 def capture_and_identify(books_db, features_db):
     lcd_status("Capturing Image")
     cap = cv2.VideoCapture(0)
+
     if not cap.isOpened():
-        return False, None, None, None
-    ret, frame = cap.read()
+        print("❌ Camera failed to open")
+        return False, None, None, None, False
+    
+    # ✅ 1. تحسين إعدادات الكاميرا
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
+    
+    # ✅ 2. Warmup - انتظار للكاميرا
+    print("⏳ Camera warmup...")
+    time.sleep(2)
+    
+    # ✅ 3. التقاط عدة صور
+    print("📷 Capturing frames...")
+    frames = []
+    for i in range(5):
+        ret, frame = cap.read()
+        if ret:
+            frames.append(frame)
+            print(f"  Frame {i+1}/5 ✓")
+        time.sleep(0.2)
+    
     cap.release()
-    if not ret:
-        return False, None, None, None
+
+    if not frames:
+        print("❌ Failed to capture frames")
+        return False, None, None, None, False
+    
+    # ✅ 4. استخدام آخر صورة (الأوضح)
+    frame = frames[-1]
+    
+    # ✅ 5. حفظ الصورة للفحص
+    cv2.imwrite("debug_capture.jpg", frame)
+    print("💾 Image saved: debug_capture.jpg")
 
     # 1️⃣ Barcode
     found, folder, shelf, rfid = detect_barcode(frame, books_db)
+    used_barcode = found
+    
     # 2️⃣ AKAZE
     if not found:
         found, folder, shelf, rfid = identify_with_akaze(frame, features_db, books_db)
+        used_barcode = False
 
     # النهاية
     if found:
         lcd_status(f"Shelf: {shelf}")
+        print(f"✅ Book found: Shelf {shelf}")
     else:
         lcd_status("Book Unknown")
+        print("❌ Book not recognized")
 
-    return found, folder, shelf, rfid
-
+    return found, folder, shelf, rfid, used_barcode
 # ===================== MAIN TEST =====================
 if __name__ == "__main__":
     books_db = load_database()
     features_db = load_features()
-    f, fol, s, r = capture_and_identify(books_db, features_db)
-    print(f"RESULT: found={f}, folder={fol}, shelf={s}, rfid={r}")
+    f, fol, s, r, used_barcode = capture_and_identify(books_db, features_db)
